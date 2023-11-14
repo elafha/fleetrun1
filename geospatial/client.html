@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Client</title>
+</head>
+<body>
+  <script>
+    const driverServerUrl = "ws://localhost:2110/driver";
+    const mapServerUrl = "ws://localhost:2110/map";
+
+    // Create WebSocket connections for driver and map endpoints
+    const driverSocket = new WebSocket(driverServerUrl);
+    const mapSocket = new WebSocket(mapServerUrl);
+
+    // Bounding box coordinates
+    const bbox = { min_lat: 37.7, min_lng: -122.5, max_lat: 37.8, max_lng: -122.3 };
+
+    // Handle connection open events for driver and map sockets
+    driverSocket.addEventListener('open', (event) => {
+      console.log('Connected to the driver server:', event);
+
+      // Example: Start sending animated location updates to the '/driver' endpoint
+      const animationDuration = 10; // seconds
+      const animationSteps = 10; // number of steps
+      let step = 0;
+
+      const animationInterval = setInterval(() => {
+        const progress = step / animationSteps;
+        const location = generateAnimatedLocation(progress, bbox);
+        driverSocket.send(JSON.stringify(location));
+
+        step++;
+
+        if (step > animationSteps) {
+          clearInterval(animationInterval);
+          console.log('Animation complete');
+        }
+      }, (animationDuration * 1000) / animationSteps);
+    });
+
+    mapSocket.addEventListener('open', (event) => {
+      console.log('Connected to the map server:', event);
+
+      // Example: Send a bbox update to the '/map' endpoint
+      mapSocket.send(JSON.stringify(bbox));
+    });
+
+    // Handle messages from the driver and map servers
+    driverSocket.addEventListener('message', (event) => {
+      console.log('Received message from the driver server:', event.data);
+      // Parse and handle the received data as needed
+    });
+
+    mapSocket.addEventListener('message', (event) => {
+      console.log('Received message from the map server:', event.data);
+      // Parse and handle the received data as needed
+    });
+
+    // Handle errors for driver and map sockets
+    driverSocket.addEventListener('error', (event) => {
+      console.error('Driver WebSocket error:', event);
+    });
+
+    mapSocket.addEventListener('error', (event) => {
+      console.error('Map WebSocket error:', event);
+    });
+
+    // Handle connection close events for driver and map sockets
+    driverSocket.addEventListener('close', (event) => {
+      console.log('Driver connection closed:', event);
+    });
+
+    mapSocket.addEventListener('close', (event) => {
+      console.log('Map connection closed:', event);
+    });
+
+    function generateAnimatedLocation(progress, bbox) {
+      const startLat = 38.0; // starting latitude outside of the bbox
+      const endLat = 37.75; // ending latitude inside the bbox
+      const startLng = -122.0; // starting longitude outside of the bbox
+      const endLng = -122.4; // ending longitude inside the bbox
+
+      const lat = startLat + progress * (endLat - startLat);
+      const lng = startLng + progress * (endLng - startLng);
+
+      return { lat, lng };
+    }
+  </script>
+</body>
+</html>
