@@ -37,11 +37,14 @@ func removeListener(ctx context.Context, listenerId string) error {
 
 func handleGeoFenceEvent(ctx context.Context, conn *ws.Conn) t38.EventHandler {
 	return t38.EventHandlerFunc(func(e *t38.GeofenceEvent) error {
+		if !e.Object.Geometry.IsPoint(){
+			return nil
+		}
 		driverUpdate := DriverUpdate{
 			DriverId: e.ID,
 			Location: Point{
-				Lat: e.Point.Lat,
-				Lng: e.Point.Lon,
+				Lng: e.Object.Geometry.Point[0],
+				Lat: e.Object.Geometry.Point[1],
 			},
 			Action: t38.DetectAction(e.Detect),
 		}
