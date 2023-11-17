@@ -7,15 +7,17 @@ import (
 
 	ws "github.com/gorilla/websocket"
 	redis "github.com/redis/go-redis/v9"
+	t38 "github.com/xjem/t38c"
 )
 
 var upgrader = ws.Upgrader{
 	ReadBufferSize: 1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: checkOrigin,
 }	
 
 var redisClient *redis.Client
-var tile38Client *redis.Client
+var tile38Client *t38.Client
 
 func main (){
 	redisClient = redis.NewClient(&redis.Options{
@@ -23,22 +25,19 @@ func main (){
 		Password: REDIS_PASSWORD,
 		DB: REDIS_DB,
 	})
+	if status := redisClient.Ping(context.Background()); status.Err() != nil {
+		log.Fatal(status.Err())
+	}
+	defer redisClient.Close()
 
-	tile38Client = redis.NewClient(&redis.Options{
-		Addr: TILE38_ADDR,
-		Password: TILE38_PASSWORD,
+	var err error
+	tile38Client, err = t38.New(t38.Config{
+		Address: TILE38_ADDR,
 	})
-
-	ctx := context.Background()
-
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		panic(err)
+	if err != nil {
+		log.Fatal(err)
 	}
-
-	pingCmd := redis.NewStringCmd(ctx, "PING")
-	if err := tile38Client.Process(ctx, pingCmd); err != nil {
-		panic(err)
-	}
+	defer tile38Client.Close()
 
 	http.HandleFunc(DRIVER_WS_PATH, wrapperHandler(handleDriverWs))
 	http.HandleFunc(MAP_WS_PATH, wrapperHandler(handleMapWs))

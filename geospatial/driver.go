@@ -3,19 +3,15 @@ package main
 import (
 	"context"
 	"net/http"
-	"time"
 
-	redis "github.com/redis/go-redis/v9"
 	ws "github.com/gorilla/websocket"
+	redis "github.com/redis/go-redis/v9"
 )
 
 func publishLocationUpdate(ctx context.Context, driverId string, location Point) error {
-	timestamp := time.Now().UnixNano()
-	setCmd := redis.NewStringCmd(ctx, "SET", UPDATE_CHANNEL, driverId, "POINT", location.Lat, location.Lng, timestamp)
-	if err := tile38Client.Process(ctx, setCmd); err != nil {
+	if err := tile38Client.Keys.Set(UPDATE_CHANNEL, driverId).Point(location.Lat, location.Lng).Do(ctx); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -54,8 +50,22 @@ func handleDriverWs(w http.ResponseWriter, r *http.Request) error {
 
 	for {
 		msgType, msg, err := conn.ReadMessage()
+
 		if err != nil {
 			return err
+		}
+
+		if msgType == ws.PingMessage{
+			conn.WriteMessage(ws.PongMessage, []byte{})
+			continue
+		}
+
+		if msgType == ws.PongMessage {
+			continue
+		}
+
+		if msgType == ws.CloseMessage {
+			return nil
 		}
 
 		if msgType != ws.TextMessage {

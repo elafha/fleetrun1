@@ -1,70 +1,78 @@
 package main
 
 import (
-	"net/http"
 	"context"
-	set "github.com/deckarep/golang-set"
-	
-	redis "github.com/redis/go-redis/v9"
-	ws "github.com/gorilla/websocket"
-)
+	"encoding/json"
+	"net/http"
 
-type BBox struct {
-	MinLat float64 `json:"min_lat"`
-	MinLng float64 `json:"min_lng"`
-	MaxLat float64 `json:"max_lat"`
-	MaxLng float64 `json:"max_lng"`
-}
+	set "github.com/deckarep/golang-set"
+
+	ws "github.com/gorilla/websocket"
+	t38 "github.com/xjem/t38c"
+)
 
 var listeners = set.NewSet()
 
-func (b BBox) Valid() bool {
-	return b.MinLat != 0 && b.MinLng != 0 && b.MaxLat != 0 && b.MaxLng != 0
+type DriverUpdate struct {
+	DriverId string `json:"id"`
+	Location Point `json:"location"`
+	Action t38.DetectAction `json:"action"`
 }
 
 func setListener(ctx context.Context, b BBox, listenerId string) error {
-	cmd := redis.NewCmd(ctx, "SETCHAN", listenerId, "WITHIN", UPDATE_CHANNEL, "FENCE", "DETECT", "inside,exit,enter", "BOUNDS", b.MinLat, b.MinLng, b.MaxLat, b.MaxLng)
-	if err := tile38Client.Process(ctx, cmd); err != nil {
+	geofenceRequest := tile38Client.Geofence.Within(UPDATE_CHANNEL).Bounds(b.MinLat, b.MinLng, b.MaxLat, b.MaxLng).Actions(t38.Inside, t38.Exit, t38.Enter)
+	if err := tile38Client.Channels.SetChan(listenerId, geofenceRequest).Do(ctx); err != nil {
 		return err
 	}
 	return nil
 }
 
 func removeListener(ctx context.Context, listenerId string) error {
-	cmd := redis.NewCmd(ctx, "DELCHAN", listenerId)
-	if err := tile38Client.Process(ctx, cmd); err != nil {
+	if err := tile38Client.Channels.DelChan(ctx, listenerId); err != nil {
 		return err
 	}
 	listeners.Remove(listenerId)
 	return nil
 }
 
-func listen(ctx context.Context, listenerId string, conn *ws.Conn) error {
-	if listeners.Contains(listenerId) {
-		return nil
-	}
-
-	listeners.Add(listenerId)
-	cmd := redis.NewCmd(ctx, "SUBSCRIBE", listenerId)
-	if err := tile38Client.Process(ctx, cmd); err != nil {
-		return err
-	}
-
-	for {
-		msg, err := cmd.Result()
+func handleGeoFenceEvent(ctx context.Context, conn *ws.Conn) t38.EventHandler {
+	return t38.EventHandlerFunc(func(e *t38.GeofenceEvent) error {
+		if !e.Object.Geometry.IsPoint(){
+			return nil
+		}
+		driverUpdate := DriverUpdate{
+			DriverId: e.ID,
+			Location: Point{
+				Lng: e.Object.Geometry.Point[0],
+				Lat: e.Object.Geometry.Point[1],
+			},
+			Action: t38.DetectAction(e.Detect),
+		}
+		msg, err := json.Marshal(driverUpdate)
 		if err != nil {
 			return err
 		}
 
-		msgBytes, ok := msg.([]byte)
-		if !ok {
-			continue
-		}
 
-		if err := conn.WriteMessage(ws.TextMessage, []byte(msgBytes)); err != nil {
+		if err := conn.WriteMessage(ws.TextMessage, msg); err != nil {
 			return err
 		}
+
+		return nil
+	})
+}
+
+func listen(ctx context.Context, listenerId string, conn *ws.Conn, client *t38.Client) error {
+	if listeners.Contains(listenerId) {
+		return nil
 	}
+	listeners.Add(listenerId)
+
+	if err := client.Channels.Subscribe(ctx, handleGeoFenceEvent(ctx, conn),listenerId); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func handleMapWs(w http.ResponseWriter, r *http.Request) error {
@@ -81,10 +89,31 @@ func handleMapWs(w http.ResponseWriter, r *http.Request) error {
 	defer conn.Close()
 	defer removeListener(r.Context(), id)
 
+	client, err := t38.New(t38.Config{
+		Address: TILE38_ADDR,
+	})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
 	for {
 		msgType, msg, err := conn.ReadMessage()
 		if err != nil {
 			return err
+		}
+
+		if msgType == ws.PingMessage{
+			conn.WriteMessage(ws.PongMessage, []byte{})
+			continue
+		}
+
+		if msgType == ws.PongMessage {
+			continue
+		}
+
+		if msgType == ws.CloseMessage {
+			return nil
 		}
 
 		if msgType != ws.TextMessage {
@@ -100,6 +129,6 @@ func handleMapWs(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
-		go listen(r.Context(), id, conn)
+		go listen(r.Context(), id, conn, client)
 	}
 }
