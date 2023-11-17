@@ -1,0 +1,132 @@
+openapi: "3.0.2"
+info:
+  title: Sahhel websocket
+  version: "1.0"
+servers:
+  - url: 194.233.173.78:2110
+paths:
+  /map:
+    get:
+      summary: Websocket connection
+      description: Establishes a websocket connection to the server
+      operationId: realtimeMap
+      responses:
+        "101":
+          description: Switching Protocols
+      x-websocket: true
+
+  /driver:
+    get:
+      summary: Websocket connection
+      description: Establishes a websocket connection to the server
+      operationId: realtimeDriver
+      responses:
+        "101":
+          description: Switching Protocols
+      x-websocket: true
+
+components:
+  messages:
+    DriverUpdate:
+      name: DriverUpdate
+      title: DriverUpdate
+      summary: DriverUpdate
+      description: the sent location of the driver from the driver
+      payload:
+        type: object
+        properties:
+          lat:
+            type: number
+            format: float
+            description: Latitude
+          lng:
+            type: number
+            format: float
+            description: Longitude
+
+    DriverLocation:
+      name: DriverLocation
+      title: DriverLocation
+      summary: DriverLocation
+      description: the received location of the driver from the map
+      payload:
+        type: object
+        properties:
+          id:
+            type: string
+            description: Driver id
+          location:
+            type: object
+            properties:
+              lat:
+                type: number
+                format: float
+                description: Latitude
+              lng:
+                type: number
+                format: float
+                description: Longitude
+          action:
+            type: string
+            description: Recorded action
+            enum:
+              - enter
+              - exit
+              - inside
+
+    MapWindow:
+      name: MapWindow
+      title: MapWindow
+      summary: MapWindow
+      description: The map bounding box
+      payload:
+        type: object
+        properties:
+          min_lat:
+            type: number
+            format: float
+            description: Minimum latitude
+          min_lng:
+            type: number
+            format: float
+            description: Minimum longitude
+          max_lat:
+            type: number
+            format: float
+            description: Maximum latitude
+          max_lng:
+            type: number
+            format: float
+            description: Maximum longitude
+  channels:
+    /map:
+      subscribe:
+        summary: Get realtime driver locations
+        operationId: realtimeMap
+        description: Get realtime driver locations
+        parameters:
+          - name: DriverLocation
+            description: Driver location
+            schema:
+              $ref: "#/components/messages/DriverLocation"
+      publish:
+        summary: Send Map bounding box
+        operationId: realtimeMap
+        description: Send Map bounding box
+        parameters:
+          - name: MapWindow
+            description: Map bounding box
+            schema:
+              $ref: "#/components/messages/MapWindow"
+
+    /driver:
+      publish:
+        summary: Send driver location
+        operationId: realtimeDriver
+        description: Send driver location
+        parameters:
+          - name: DriverUpdate
+            description: Driver location
+            schema:
+              $ref: "#/components/messages/DriverUpdate"
+
