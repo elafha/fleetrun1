@@ -1,7 +1,8 @@
 package main
 
 const (
-	PUBLIC_JWT_KEY = "secret"
+	// TODO: Move to env vars
+	PUBLIC_JWT_KEY = "super-unsecure-secret-key"
 	UPDATE_CHANNEL = "driver_updates"
 	DRIVERS_KEY = "drivers"
 	REDIS_ADDR = "redis:6379"
